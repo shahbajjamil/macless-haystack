@@ -43,6 +43,8 @@ def icloud_login_mobileme(username='', password=''):
         password = getpass('Password: ')
 
     g = gsa_authenticate(username, password)
+    if not g:
+        raise Exception("Authentication failed. Please verify your Apple ID and password.")
     pet = g["t"]["com.apple.gs.idms.pet"]["token"]
     adsid = g["adsid"]
 
@@ -82,9 +84,17 @@ def gsa_authenticate(username, password):
     r = gsa_authenticated_request(
         {"A2k": a, "ps": ["s2k", "s2k_fo"], "u": username, "o": "init"})
 
+    if "Status" in r and r["Status"].get("ec", 0) != 0:
+        logger.error(f"Authentication initialization failed: {r['Status'].get('em', 'Unknown error')} (ec: {r['Status'].get('ec')})")
+        return None
+
+    if "sp" not in r:
+        logger.error("Authentication initialization failed: Server response did not contain SRP parameters.")
+        return None
+
     if r["sp"] not in ["s2k", "s2k_fo"]:
         logger.warning(f"This implementation only supports s2k and sk2_fo. Server returned {r['sp']}")
-        return
+        return None
 
     # Change the password out from under the SRP library, as we couldn't calculate it without the salt.
     usr.p = encrypt_password(password, r["s"], r["i"], r["sp"])
